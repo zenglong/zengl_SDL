@@ -1,0 +1,23 @@
+  zengl_SDL为zengl嵌入式脚本语言的另一个测试项目，在SDL引擎的帮助下，可以在zengl脚本里编写一些简单的小游戏或者其他的小程式。该项目仅供学习研究和测试用途。
+
+  该项目里面默认有一个俄罗斯方块的小游戏。测试方法如下：
+
+  linux系统下，进入linux目录，如果要将zengl嵌入式脚本语言编译为动态链接库，则需要首先获得root权限，然后make (ubuntu下常见的方式是sudo make命令来提权和编译)
+
+  如果要在linux下编译静态库，则直接在linux目录里输入make static命令(静态库无需root权限)
+
+  生成的可执行文件为zengl_SDL和encrypt，encrypt为加密脚本文件，暂时用不到，因为要运行加密的脚本需要修改main.c来开启加密支持。
+
+  zengl_SDL为主程式，该程式利用zengl语言库来编译执行脚本，利用SDL库来渲染图形。
+
+  可以使用./zengl_SDL gui_Tetris/tetris.zl命令来编译执行俄罗斯方块脚本，或者使用./zengl_SDL gui_Tetris/tetris.zl -d来开启脚本调试。
+
+  windows系统下，进入windows目录，该目录中的zengl_vc6.dsw是VC6的工作空间，zengl_SDL.sln是vs2008的解决方案文件(vs2010或更高版本则直接导入vs2008的解决方案即可)。
+
+  在成功编译windows里的zengl_SDL项目后，可以在调试的命令参数里输入gui_Tetris/tetris.zl 或 gui_Tetris/tetris.zl -d 来测试俄罗斯方块脚本
+
+  调试时，可以通过h命令来查看帮助
+
+  作者：zenglong
+  时间：2014年1月29日
+  官网：www.zengl.com

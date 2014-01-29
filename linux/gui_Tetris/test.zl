@@ -1,0 +1,11 @@
+use builtin,sdl;
+
+def WinWidth 500; //整个游戏窗口的宽
+def WinHeight 550; //游戏窗口的高
+
+sdlInit(); //通过sdlInit的SDL模块函数来初始化SDL库
+screen = sdlCreateWin(WinWidth,WinHeight,32,0,250);
+sdlSetBkImg("hello.jpg");
+sdlShowScreen();
+sdlDelay(5000);
+sdlQuit(); //SDL退出时释放资源

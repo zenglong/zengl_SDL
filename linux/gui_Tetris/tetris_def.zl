@@ -1,0 +1,131 @@
+use builtin,sdl; //加载内建模块和SDL游戏引擎模块
+def TRUE 1;
+def FALSE 0;
+def NULL 0;
+//sdl event def SDL游戏引擎事件相关的宏定义
+def NoEvent 0;
+def EvKeyDown 2;
+def EvKeyUp 3;
+def KeyEsc 27;
+def KeyUp 273;
+def KeyDown 274;
+def KeyLeft 276;
+def KeyRight 275;
+def KeyR 114; //r键
+def KeyP 112; //p键
+def EvQuit 12;
+//sdl event def end
+def WinWidth 500; //整个游戏窗口的宽
+def WinHeight 550; //游戏窗口的高
+def GameMainWidthNum 10; //俄罗斯方块主区域水平格数
+def GameMainHeightNum 20; //俄罗斯方块主区域垂直格数
+def TetrisWidth 25; //俄罗斯方块的宽
+def TetrisHeight 25; //俄罗斯方块的高
+def TetrisStyleNum 7; //俄罗斯方块样式数量
+def TetrisStateNum 4; //俄罗斯方块状态个数
+def TetrisDropSecond 250; //方块下落毫秒数，越小速度越快，难度越高
+
+class clsPosition //和绘制矩形有关的类定义
+	x; //左上角x坐标
+	y; //左上角y坐标
+	w; //矩形宽
+	h; //矩形高
+//endcls //类定义结束
+endclass //类定义结束，既可以用endcls，也可以用endclass
+
+class clsMouseMotionEvt
+	type;	/**< SDL_MOUSEMOTION */
+	which;	/**< The mouse device index */
+	state;	/**< The current button state */
+	x; y;	/**< The X/Y coordinates of the mouse */
+	xrel;	/**< The relative motion in the X direction */
+	yrel;	/**< The relative motion in the Y direction */
+//endcls
+endclass //类定义结束，既可以用endcls，也可以用endclass
+
+class clsMouseButtonEvt
+	type;	/**< SDL_MOUSEBUTTONDOWN or SDL_MOUSEBUTTONUP */
+	which;	/**< The mouse device index */
+	state;	/**< SDL_PRESSED or SDL_RELEASED */
+	x; y;	/**< The X/Y coordinates of the mouse at press time */
+	button;	/**< The mouse button index */
+//endcls
+endclass //类定义结束，既可以用endcls，也可以用endclass
+
+class clsEvent
+	type; //事件类型
+	keytype; //按键事件
+	clsMouseMotionEvt motion; //鼠标移动事件
+	clsMouseButtonEvt button; //鼠标点击事件
+//endcls
+endclass //类定义结束，既可以用endcls，也可以用endclass
+
+class clsColor
+	r;
+	g;
+	b;
+	a;
+//endcls
+endclass //类定义结束，既可以用endcls，也可以用endclass  颜色类，r,g,b,a分别为红，绿，蓝，alpha通道
+
+class clsFixTetris
+	startindex; //游戏主区域中方格存放的方块形状样式
+	occupy; //游戏主区域中方格是否被方块占用
+endclass //类定义结束，既可以用endcls，也可以用endclass
+
+class clsGameMainBg
+	clsPosition pos; //游戏主区域的主屏幕的坐标，宽高信息
+	clsColor bgcolor; //游戏主区域的背景颜色
+	clsFixTetris fix_tetris; //存放游戏主区域固定方块信息的数组
+	count; //游戏主区域的总方格数
+	line_count_array; //游戏主区域中每行包含的方块个数
+	remove_line_array; //存放游戏主区域中装满小方块需要消除的行号的数组
+	needRemoveNum; //游戏主区域中需要消除的行数
+endclass //类定义结束，既可以用endcls，也可以用endclass
+
+class clsCoordinate
+	vx; //水平方向的虚拟坐标
+	vy; //垂直方向的虚拟坐标
+endclass //类定义结束，既可以用endcls，也可以用endclass
+
+class clsTetris
+	startindex; //俄罗斯方块的形状样式索引
+	state; //俄罗斯方块的旋转状态
+	bgimg; //俄罗斯方块背景图片集合
+	direct; //俄罗斯方块按键方向
+	speed; //俄罗斯方块的下落格数
+	clsCoordinate xy; //俄罗斯方块整体虚拟坐标
+	clsCoordinate members; //俄罗斯方块各种形状样式的相对虚拟坐标数组
+endclass //类定义结束，既可以用endcls，也可以用endclass
+
+class clsNextTetris
+	startindex; //在游戏窗口右侧显示下一次将要下落的方块的形状样式索引
+	state; //在游戏窗口右侧显示下一次将要下落的方块的旋转状态
+	needDraw; //判断是否需要绘制
+	clsPosition pos; //下一次将要下落的方块在游戏窗口中的坐标信息
+endclass //类定义结束，既可以用endcls，也可以用endclass
+
+class clsFont
+	fontobj; //SDL FONT加载的字体对象指针
+	fontcolor; //字体的前景色
+	img; //存放需要绘制的SDL字符串位图表面指针，字符串都是先转为位图，然后再绘制到游戏窗口的
+	clsPosition pos; //字符串位图需要绘制到游戏窗口中的坐标信息
+endclass //类定义结束，既可以用endcls，也可以用endclass
+
+class clsScores
+	clsFont font; //和得分相关的字符串及字体资源
+	scores; //得分
+	needDraw; //判断是否需要绘制得分
+endclass //类定义结束，既可以用endcls，也可以用endclass
+
+class clsPauseText
+	clsFont font; //和暂停相关的字符串及字体资源
+	needPause; //判断是否需要暂停
+	needDraw; //判断是否需要绘制暂停字符串信息
+endclass //类定义结束，既可以用endcls，也可以用endclass
+
+class clsZenglBgImg
+	img; //zengl program背景图片
+	needDraw; //判断是否需要绘制该背景图片
+	clsPosition pos; //背景图片在游戏窗口中的坐标
+endclass //类定义结束，既可以用endcls，也可以用endclass
