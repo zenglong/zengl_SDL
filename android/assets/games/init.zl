@@ -1,0 +1,3 @@
+/*需要运行的游戏脚本*/
+GameStartScript = 'tetris/tetris.zl';
+//GameStartScript = 'gui_21_point/sdl_21_point.zl';

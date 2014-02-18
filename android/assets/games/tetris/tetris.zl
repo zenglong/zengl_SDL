@@ -1,0 +1,594 @@
+inc 'tetris_def.zl'; //加载宏定义和类定义的脚本
+
+/*
+	绘制运动中的俄罗斯方块
+*/
+fun myDrawTetris()
+	global tetris,screen,gameMainBg,next_tetris; //通过global引入全局变量
+	clsTetris tetris; clsGameMainBg gameMainBg; clsNextTetris next_tetris; //对全局变量进行类型声明，进行类型声明后，下面才能通过点运算符找到类成员信息。
+	start = tetris.startindex * 16 + tetris.state * 4; //通过startindex和state得到俄罗斯方块在形状数组中的索引信息，一共是I,J,L等7类形状，每类形状还有四个state状态
+	count = start + 4; //得到需要绘制的方块数量，每种形状都由四个俄罗斯方块组成，所以是start + 4
+	for(i=start; i<count ; i++) //通过for循环将俄罗斯的四个方块通过sdlBlitImg这个sdl模块提供的脚本函数绘制到屏幕上。
+		vy = tetris.members[i].vy + tetris.xy.vy; //得到小方块的vy虚拟纵坐标
+		if(vy < 0) //如果小方块在主游戏区域最上方非可见区域，则跳过不绘制。
+			continue;
+		endif
+		sdlBlitImg(tetris.bgimg,
+					array(tetris.startindex * TetrisWidth,0,TetrisWidth,TetrisHeight),
+					screen,
+					array(TetrisWidth * (tetris.members[i].vx + tetris.xy.vx) + gameMainBg.pos.x, 
+							TetrisHeight * (tetris.members[i].vy + tetris.xy.vy) + gameMainBg.pos.y, 
+							TetrisWidth , TetrisHeight)
+					);
+	endfor
+	if(next_tetris.needDraw) //在主界面右边上方是专门显示下一次将出现的方块的。通过needDraw成员判断是否需要绘制，一般是在游戏开头或发生底部碰撞需要切换方块时才需要绘制。
+		myDrawNextTetris(); //调用下面的myDrawNextTetris自定义函数来绘制下一次将显示的俄罗斯方块。
+		next_tetris.needDraw = FALSE; //绘制完一次后就将needDraw成员设为FALSE，这样就不会反复绘制了。节约CPU开销。SDL库的2D绘制主要还是依赖于CPU
+	endif
+endfun
+
+/*
+	在主屏幕右侧上方绘制下一次将要出现的俄罗斯方块，以方便玩家进行预算
+*/
+fun myDrawNextTetris()
+	global tetris , next_tetris , screen;
+	clsTetris tetris; clsNextTetris next_tetris;
+	sdlFillRect(screen,array(280,30,120,120),array(0, 0xFF, 0xFF)); //先将右上方区域清空
+	start = next_tetris.startindex * 16 + next_tetris.state * 4; //通过startindex和state得到俄罗斯方块在形状数组中的索引信息，一共是I,J,L等7类形状，每类形状还有四个state状态
+	count = start + 4; //得到需要绘制的方块数量，每种形状都由四个俄罗斯方块组成，所以是start + 4
+	for(i=start; i<count ; i++) //通过for循环将俄罗斯的四个方块通过sdlBlitImg这个sdl模块提供的脚本函数绘制到屏幕上。
+		sdlBlitImg(tetris.bgimg,
+					array(next_tetris.startindex * TetrisWidth,0,TetrisWidth,TetrisHeight),
+					screen,
+					array(TetrisWidth * tetris.members[i].vx + next_tetris.pos.x, 
+							TetrisHeight * tetris.members[i].vy + next_tetris.pos.y, 
+							TetrisWidth , TetrisHeight)
+					); //next_tetris和tetris共用同一套俄罗斯方块样式
+	endfor
+endfun
+
+/*
+	绘制主游戏区域由于碰撞而固定下来的方块，如果主游戏区域横排有10格，竖排有20格，那么一共可以存放200个小方块。
+	那么gameMainBg.fix_tetris就是一个含有200个元素的数组，每个元素对应主游戏区域中的一个小格子，gameMainBg.fix_tetris[i].occupy成员用于判断
+	某个格子里是否含有小方块。如果含有方块，就根据该方块的样式和状态将其绘制出来。这样做个循环就可以将200个格子里含有方块的格子都绘制出来。
+*/
+fun myDrawFixTetris()
+	global tetris,screen,gameMainBg;
+	clsTetris tetris; clsGameMainBg gameMainBg;
+	for(i=0;i<gameMainBg.count;i++) //循环所有的主游戏区域的格子
+		if(gameMainBg.fix_tetris[i].occupy) //如果某个格子里有方块，则将其绘制出来
+			vx = i % GameMainWidthNum; //根据索引值计算虚拟坐标的x值。
+			vy = bltConvToInt(i / GameMainWidthNum); //根据索引值计算虚拟坐标的y值。因为除法得出的结果是浮点数，所以通过bltConvToInt将浮点数转为整数
+			sdlBlitImg(tetris.bgimg,
+					array(gameMainBg.fix_tetris[i].startindex * TetrisWidth,0,TetrisWidth,TetrisHeight),
+					screen,
+					array(TetrisWidth * vx + gameMainBg.pos.x, 
+							TetrisHeight * vy + gameMainBg.pos.y, 
+							TetrisWidth , TetrisHeight)
+					);
+		endif
+	endfor
+endfun
+
+/*
+	对活动中的俄罗斯方块进行底部的碰撞检测，如果运动中的俄罗斯方块到了主游戏区的底部，或者方块底部和其他固定方块的上面相撞则返回TRUE，
+	如果底部没发生碰撞，则返回FALSE，并根据运动方块与下方碰撞物的距离以及按键状态来设置下落速度。
+*/
+fun myCollisionDetect()
+	global tetris,gameMainBg;
+	clsTetris tetris; clsGameMainBg gameMainBg;
+	/*if(tetris.direct == KeyDown) //如果按了下方向键，则设置初始速度为2，即每次移动两格来加速下落。
+		tetris.speed = 2;
+	else
+		tetris.speed = 1; //否则按照常规的1格速度。
+	endif*/
+	tetris.speed = tetris.direct == KeyDown ? 2 : 1; //使用问号冒号结构来代替上面的if..endif的写法，两种做法都可以。
+	start = tetris.startindex * 16 + tetris.state * 4; //得到方块样式的索引信息
+	count = start + 4; //需要对四个方块都进行检测，所以加4
+	totalnum = GameMainWidthNum * GameMainHeightNum; //总格子数，这里用于判断是否到底
+	for(i = start ; i<count ; i++) //循环对四个小方块进行检测。
+		vx = tetris.xy.vx + tetris.members[i].vx; //由运动方块的整体虚拟坐标和每个小方块的相对虚拟坐标相加，得到小方块的绝对虚拟坐标
+		vy = tetris.xy.vy + tetris.members[i].vy;
+		index = vx + (vy + 1) * GameMainWidthNum; //得到当前小方块的正下方格子的索引
+		if(index < 0) //当索引值小于0时即 vy+1小于0时，跳过，这种情况发生在当方块累积快到顶部时，下一次的方块将出现在虚拟坐标为-4的地方，这样用户就还有机会翻身。普通情况下方块都是从虚拟坐标为0的位置开始下落的。
+			continue;
+		elif(index >= totalnum || gameMainBg.fix_tetris[index].occupy) //如果正下方就是主游戏区域的底部，或者正下方被别的方块占据了，就返回TRUE，表示底部发生了碰撞。
+			return TRUE;
+		elif((tetris.direct == KeyDown) && 
+			 (index + GameMainWidthNum >= totalnum || gameMainBg.fix_tetris[index + GameMainWidthNum].occupy)) //在按了下方向键时，并且运动中的俄罗斯方块下方只有一格可下落的空间的话，就将速度重置为1
+			tetris.speed = 1;
+		endif
+	endfor
+	return FALSE; //经过上面的循环，如果四个小方块都没发生碰撞，则返回FALSE，表示没有发生底部碰撞。
+endfun
+
+/*
+	当判断某方格是否被占用时，需要对其索引进行检查，如果不进行检查，那么当索引超出范围或小于0时，虚拟机都会输出运行时错误。
+*/
+fun myGameMainBgOccupyDetect(index)
+	global gameMainBg;
+	clsGameMainBg gameMainBg;
+	if(index < 0 || index >= gameMainBg.count) //如果超出范围，则返回TRUE，这样方块就不会左右移动或者不会切换状态。
+		return TRUE;
+	elif(gameMainBg.fix_tetris[index].occupy) //占用状态返回TRUE
+		return TRUE;
+	else
+		return FALSE; //返回FALSE表示该索引的方格没被占用。
+	endif
+endfun
+
+/*
+	边界检测函数，当按下了左或右方向键时，根据其左右两边的实际情况，判断方块是否可以进行左右移动
+*/
+fun myEdgeDetect()
+	global tetris,gameMainBg;
+	clsTetris tetris; clsGameMainBg gameMainBg;
+	start = tetris.startindex * 16 + tetris.state * 4;
+	count = start + 4;
+	for(i = start ; i<count ; i++) //循环对四个小方块进行边界判断。
+		vx = tetris.xy.vx + tetris.members[i].vx;
+		vy = tetris.xy.vy + tetris.members[i].vy;
+		if(tetris.direct == KeyLeft) //如果之前按下了左方向键，则判断是否可以左移
+			if(vx - 1 < 0) //如果已经到了主游戏区的左边界，则返回TRUE，表示检测到了边界，不能再左移
+				return TRUE;
+			elif(vy < 0) //如果vy < 0 ，这种情况发生在方块累积快到顶部时。直接跳过
+				continue;
+			elif(myGameMainBgOccupyDetect(vx - 1 + vy * GameMainWidthNum)) //判断该小方块左侧是否被主游戏区域的小方块占用，如果被占用了，返回TRUE，表示不能再往左移
+				return TRUE;
+			endif
+		elif(tetris.direct == KeyRight) //如果之前按下了右方向键，则判断是否可以右移
+			if(vx + 1 >= GameMainWidthNum) //如果到了主游戏区域的最右边，则返回TRUE，表示不能再右移
+				return TRUE;
+			elif(vy < 0) //如果vy < 0 , 即运动小方块在主游戏区的上方非可见区域则跳过。
+				continue;
+			elif(myGameMainBgOccupyDetect(vx + 1 + vy * GameMainWidthNum)) //判断该小方块右侧是否已被主游戏区域的小方块占用。
+				return TRUE;
+			endif
+		endif
+	endfor
+	return FALSE; //如果没检测到边界，则返回FALSE，表示可以进行左右移动。
+endfun
+
+/*
+	如果按了上方向键，那么在切换状态前，需要进行检测，以判断是否可以进行旋转来切换状态
+*/
+fun myEdgeDetectForKeyUp()
+	global tetris,gameMainBg;
+	clsTetris tetris; clsGameMainBg gameMainBg;
+	start = tetris.startindex * 16 + tetris.state * 4;
+	count = start + 4;
+	for(i = start ; i<count ; i++) //循环对四个小方块进行边界判断。
+		vx = tetris.xy.vx + tetris.members[i].vx;
+		vy = tetris.xy.vy + tetris.members[i].vy;
+		if(vx < 0) //如果超过了主游戏区的最左边界，则返回TRUE，表示不可以切换状态
+			return TRUE;
+		elif(vx >= GameMainWidthNum) //如果超过了主游戏区域的最右边，则返回TRUE ， 表示不可以切换状态
+			return TRUE;
+		elif(vy < 0) //如果vy < 0 ，即运动小方块在主游戏区的上方非可见区域则跳过。
+			continue;
+		elif(myGameMainBgOccupyDetect(vx + vy * GameMainWidthNum)) //判断该小方块是否被主游戏区域的小方块占用，如果被占用了，返回TRUE，表示不可以切换状态
+			return TRUE;
+		endif
+	endfor
+	return FALSE; //返回FALSE，表示当前可以切换状态
+endfun
+
+/*
+	如果按了上下左右方向键，则计算将要显示的位置和样式等信息
+*/
+fun myCalculateMove()
+	global tetris,isneedDraw,time;
+	clsTetris tetris;
+	switch(tetris.direct)
+	case KeyLeft:
+		if(!myEdgeDetect()) //如果按了左方向键，则先进行边界检测，如果没检测到边界，则将虚拟坐标减一
+			tetris.xy.vx--;
+		endif
+		break;
+	case KeyRight:
+		if(!myEdgeDetect()) //如果按了右方向键，则先进行边界检测，如果没检测到边界，则将虚拟坐标加一
+			tetris.xy.vx++;
+		endif
+		break;
+	case KeyUp:
+		orig_state = tetris.state;
+		tetris.state = (tetris.state + 1)%4; //如果按了上方向键，则将切换状态值，每种形状有四个旋转状态。当然有的形状如O形，再怎么旋转都是一个样子。
+		start = tetris.startindex * 16 + tetris.state * 4;
+		if(myEdgeDetectForKeyUp() || 
+			myCollisionDetect()) //要切换状态必须首先判断旋转后的状态是否会发生底部碰撞，或者旋转状态时是否会碰到周围的固定小方块，或者是否超出左右边界，如果会发生这些情况，则将状态值进行还原，这样就不会进行切换。
+			tetris.state = orig_state;
+		endif
+		break;
+	case KeyDown:
+		if(!myCollisionDetect()) //如果按了下方向键，则进行碰撞检测，并确定最终的下落速度，如果会发生碰撞，则跳过，如果不会发生碰撞，根据下落速度增加vy虚拟坐标
+			tetris.xy.vy += tetris.speed;
+		endif
+		break;
+	default: //其他按键，直接返回
+		return;
+	endswt
+	isneedDraw = TRUE; //设置需要绘制标记
+	time = sdlGetTicks(); //重置定时器
+endfun
+
+/*
+	得到非重复的随机的方块样式
+*/
+fun myGetRandomIndex()
+	global next_tetris;
+	clsNextTetris next_tetris;
+	while(TRUE)
+		rand = bltRandom()%TetrisStyleNum;
+		if(rand != next_tetris.startindex) //如果随机值和上一次不是一种形状，则跳出循环，否则，继续获取随机值，直到与上一次的形状不同为止。
+			break;
+		endif
+	endwhile
+	next_tetris.startindex = rand; //设置startindex形状样式索引，这里设置的是next_tetris下一次要显示的方块样式。
+endfun
+
+/*
+	如果发生底部碰撞，则将主游戏区对应的格子设为占用状态，并增加对应行所拥有的固定小方块数。
+*/
+fun myFillMainBg()
+	global gameMainBg,tetris,turn_over;
+	clsGameMainBg gameMainBg; clsTetris tetris;
+	start = tetris.startindex * 16 + tetris.state * 4;
+	count = start + 4;
+	TopOver = FALSE;
+	for(i = start ; i<count ; i++) //对四个小方块循环设置占用状态
+		vx = tetris.xy.vx + tetris.members[i].vx;
+		vy = tetris.xy.vy + tetris.members[i].vy;
+		if(vy <= 0) //如果某个小方块到达了主游戏区域的顶部，则本轮结束。即将turn_over设为TRUE,在本函数结尾处的代码还会根据实际情况决定是否要结束本轮。
+			turn_over = TRUE;
+			if(vy < 0) //如果vy小于0，说明方块在主游戏区的上方非可见区域，则跳过，因为当索引值小于0时，是无法访问数组等内存块里的元素的，强行访问，会被虚拟机结束脚本并输出运行时错误。
+				TopOver = TRUE;
+				continue;
+			endif
+		endif
+		index = vx + vy * GameMainWidthNum;
+		gameMainBg.fix_tetris[index].occupy = 1; //将主游戏区对应方格设为占用状态。
+		gameMainBg.fix_tetris[index].startindex = tetris.startindex; //设置形状样式的索引值，每个样式都有自己的背景图片信息
+		if((++gameMainBg.line_count_array[vy]) >= GameMainWidthNum) //增加对应行所拥有的固定小方块数。如果一行满了，则设置需要消除的行。
+			gameMainBg.line_count_array[vy] = GameMainWidthNum;
+			gameMainBg.remove_line_array[gameMainBg.needRemoveNum++] = vy; //增加needRemoveNum需要消除的行数，同时将需要消除的行统计到remove_line_array数组中。
+		endif
+	endfor
+	if(turn_over)
+		if(gameMainBg.needRemoveNum > 1) //如果下落的方块到了顶部但是此时可以消除大于1的行数的，那么本轮就还可以继续进行下去
+			turn_over = FALSE; //将turn_over设为FALSE
+		elif(gameMainBg.needRemoveNum == 1 && !TopOver) //如果只消除一行，并且当前运动方块中没有小方块在主游戏区上方的非可见区域，则将turn_over设为FALSE，让玩家有个翻身的机会。
+			turn_over = FALSE;
+		endif
+	endif
+endfun
+
+/*
+	该函数是用在当需要消除某行时，上方的vy行元素需要下落几格，因为需要消除的行不一定就是连续的，可能vy+1和vy-1刚好满了一行，而中间的vy没满，
+	那么vy行的元素就只需下降一行。而vy-1上方的元素则需要下降两行。
+*/
+fun myDetectRemoveNumForMid(vy)
+	global gameMainBg;
+	clsGameMainBg gameMainBg;
+	num = 0;
+	for(i=0;i<gameMainBg.needRemoveNum;i++)
+		if(vy < gameMainBg.remove_line_array[i])
+			num++;
+		endif
+	endfor
+	return num;
+endfun
+
+/*
+	消除所有装满小方块的行，再将其上方的元素下移。
+*/
+fun myRemoveMainBgFixTetris()
+	global gameMainBg,scores_text;
+	clsGameMainBg gameMainBg;  clsScores scores_text;
+	bottom = GameMainWidthNum * (GameMainHeightNum-1);
+	mixvy = -1;
+	for(vy = GameMainHeightNum-1 ; vy >= 0 ; vy--) //循环消除所有满行的元素
+		if(gameMainBg.line_count_array[vy] == GameMainWidthNum)
+			end = (vy+1) * GameMainWidthNum;
+			for(index = vy * GameMainWidthNum ; index < end ; index++) //将这些行里的元素占用位设为0，即消除这些元素。
+				gameMainBg.fix_tetris[index].occupy = 0;
+			endfor
+			gameMainBg.line_count_array[vy] = 0; //将行所拥有的方块数设为0
+			/*if(mixvy == -1) //mixvy是需要消除的最低下的行
+				topvy = mixvy = vy;
+			else
+				topvy = vy; //topvy是需要消除的最上端的行
+			endif*/
+			topvy = mixvy == -1 ? (mixvy = vy): vy; //使用问号冒号结构来代替上面的if...endif的写法，因为问号，冒号的优先级比赋值语句的优先级高，所以? ... :中间的语句如果有赋值运算符，就需要用括号括起来，如本句的 ... ? (mixvy = vy): ...
+		endif
+	endfor
+	for(i=0;i<GameMainWidthNum;i++) //循环将每列的元素向下移，以填补前面消除的行空隙。
+		for(index = i + bottom , vy = GameMainHeightNum-1; 
+			vy >= 0 ; index-=GameMainWidthNum,vy--)
+			if(vy < topvy) //如果是在topvy的上方，则消除了多少行，就下降多少行
+				needRemoveNum = gameMainBg.needRemoveNum;
+			elif(vy < mixvy) //如果是在消除行的中间，则通过myDetectRemoveNumForMid函数决定要下降多少格。
+				needRemoveNum = myDetectRemoveNumForMid(vy);
+			else
+				continue; //如果是消除行的下方的元素则保持不变
+			endif
+			if(gameMainBg.fix_tetris[index].occupy) //如果index索引对应的格子里有方块，则将其方块下移
+				index2 = index + GameMainWidthNum * needRemoveNum; //得到按needRemoveNum下移后的方格索引
+				gameMainBg.fix_tetris[index2].startindex = gameMainBg.fix_tetris[index].startindex; //将原index处的形状样式赋值给index2处
+				gameMainBg.fix_tetris[index].occupy = 0; //再将原index处的方格设为非占用状态，即该方格内没有小方块。
+				gameMainBg.fix_tetris[index2].occupy = 1; //将下移后的index2索引处的方格设置占用状态。
+				gameMainBg.line_count_array[vy]--; //将原行方块数减一
+				gameMainBg.line_count_array[vy+needRemoveNum]++; //将新行方块数加一
+				if(gameMainBg.line_count_array[vy+needRemoveNum] > GameMainWidthNum) //这个判断是调试用到。用于判断消除和位移工作是否正常。
+					print 'debug error pause line '+vy+' count out of range!'; //debug
+					read(); //debug
+				endif
+			endif
+		endfor
+	endfor
+	scores_text.scores += gameMainBg.needRemoveNum * GameMainWidthNum; //根据消除的行数和每行的方块数计算得分
+	sdlDrawTextEx(&scores_text.font.img , scores_text.font.fontobj, "scores:"+scores_text.scores , scores_text.font.fontcolor); //设置新的得分字符串的sdl位图表面
+	scores_text.needDraw = TRUE; //将得分结构的needDraw成员设为TRUE表示需要重新绘制得分信息。
+	gameMainBg.needRemoveNum = 0; //将需要消除的行数重置为0
+endfun
+
+/*
+	计算运动中的方块的虚拟坐标，并进行底部碰撞检测，以及判断本轮是否结束
+*/
+fun myTetrisMove()
+	global time,isneedDraw,tetris,gameMainBg,turn_over,next_tetris;
+	clsTetris tetris; clsGameMainBg gameMainBg; clsNextTetris next_tetris;
+	if(tetris.direct)
+		myCalculateMove(); //如果玩家按了方向键，则通过myCalculateMove函数计算位移后的坐标
+		tetris.direct = 0; //重置方向位
+	elif(sdlGetTicks() - time > TetrisDropSecond) //如果没按方向键，则每隔TetrisDropSecond毫秒，就进行匀速自由落体运动。
+		if(myCollisionDetect()) //先进行底部碰撞检测
+			myFillMainBg(); //将方块固定到主游戏区域
+			if(gameMainBg.needRemoveNum > 0) //如果有需要消除的行，则调用myRemoveMainBgFixTetris函数进行处理。
+				myRemoveMainBgFixTetris();
+			endif
+			if(turn_over) //如果有方块到了顶部，则本轮结束，直接返回
+				isneedDraw = TRUE;
+				return;
+			endif
+			tetris.startindex = next_tetris.startindex; //设置将显示的方块形状
+			tetris.state = next_tetris.state; //设置方块旋转状态
+			myGetRandomIndex(); //再随机生成下一次的方块形状，该形状将显示在主屏幕的右上方
+			next_tetris.state = bltRandom()%TetrisStateNum; //设置下一次的方块旋转状态
+			tetris.xy.vx = bltRandom()%(GameMainWidthNum - 3); //设置随机的水平初始虚拟坐标
+			tetris.xy.vy = 0; //重置vy虚拟坐标
+			if(myCollisionDetect()) //如果主游戏区域累积到了顶部区域，则将运动方块vy设为-4，这样，可以给玩家一个翻身的机会。虽然机会不大，呵呵。
+				tetris.xy.vy = -4;
+			endif
+			next_tetris.needDraw = TRUE;
+		else
+			tetris.xy.vy += tetris.speed; //如果没发生底部碰撞，则根据speed速度设置新的vy虚拟坐标
+		endif
+		isneedDraw = TRUE; //设置需要绘制标记
+		time = sdlGetTicks(); //重置time定时器
+	endif
+endfun
+
+/*
+	当某一轮结束时，可以按"r"键，重新开始一轮，该函数将清除主游戏区域的所有方块，并重置得分等信息。
+*/
+fun myReStartGame()
+	global gameMainBg,tetris,turn_over,scores_text,screen,isneedDraw,zengl_lang_bgimg,next_tetris;
+	clsGameMainBg gameMainBg;  
+	clsTetris tetris; 
+	clsNextTetris next_tetris;
+	clsScores scores_text; 
+	clsZenglBgImg zengl_lang_bgimg; //zengl program的背景图片
+	for(i=0;i<gameMainBg.count;i++) //循环清除所有方块。
+		gameMainBg.fix_tetris[i].occupy = 0;
+	endfor
+	for(vy = GameMainHeightNum-1 ; vy >= 0 ; vy--)
+		gameMainBg.line_count_array[vy] = 0;
+	endfor
+	gameMainBg.needRemoveNum = 0;
+	tetris.startindex = next_tetris.startindex;
+	tetris.state = next_tetris.state;
+	myGetRandomIndex();
+	tetris.xy.vx = bltRandom()%(GameMainWidthNum - 3);
+	tetris.xy.vy = 0;
+	scores_text.scores = 0;
+	turn_over = FALSE;
+	isneedDraw = TRUE;
+	next_tetris.needDraw = TRUE; //是否需要绘制下一次的形状
+	scores_text.needDraw = TRUE; //是否需要绘制得分。
+	zengl_lang_bgimg.needDraw = TRUE; //zengl_lang_bgimg用于管理zengl program的位图表面
+	time = sdlGetTicks();
+	sdlDrawTextEx(&scores_text.font.img , scores_text.font.fontobj, "scores:"+scores_text.scores , scores_text.font.fontcolor);
+	sdlFillRect(screen,NULL,array(0, 0xFF, 0xFF)); //将主屏幕清空。
+endfun
+
+/*
+	当玩家有事需要暂停系统时，可以按"p"键暂停，再按一次"p"键即可恢复执行
+*/
+fun myGameDoPause()
+	global pause_game,scores_text,isneedDraw,screen,zengl_lang_bgimg,next_tetris;
+	clsPauseText pause_game; 
+	clsNextTetris next_tetris;
+	clsScores scores_text;
+	clsZenglBgImg zengl_lang_bgimg;
+	if(!pause_game.needPause)
+		pause_game.needPause = TRUE; //设置needPause为TRUE，则系统将暂停游戏
+		pause_game.needDraw = TRUE;
+	else
+		pause_game.needPause = FALSE;
+		isneedDraw = TRUE;
+		next_tetris.needDraw = TRUE;
+		scores_text.needDraw = TRUE;
+		zengl_lang_bgimg.needDraw = TRUE;
+		sdlFillRect(screen,NULL,array(0, 0xFF, 0xFF));
+	endif
+endfun
+
+sdlInit(); //通过sdlInit的SDL模块函数来初始化SDL库
+sdlFontInit(); //初始化字体库
+screen = sdlCreateWin(WinWidth,WinHeight,32,0,250); //创建窗口，最后一个参数250用来设置检测连续按键的间隔为250ms，这样按上下左右键时，就可以按着不动，例如按着下键不松手，则方块会一直加速，不用像以前那样反复按下键了。
+clsEvent event;
+clsGameMainBg gameMainBg;
+clsScores scores_text; //得分
+clsFont turn_over_text; //一轮游戏结束时，将显示的字符串位图表面信息
+clsPauseText pause_game; //暂停时，将显示的字符串位图表面信息
+scores_text.font.fontobj = turn_over_text.fontobj = pause_game.font.fontobj = sdlOpenFont('CANDARA.TTF',25); //加载字体文件
+sdlSetCaption('俄罗斯方块 website:www.zengl.com  author:zenglong'); //设置游戏窗口标题
+scores_text.font.fontcolor = turn_over_text.fontcolor = pause_game.font.fontcolor = array(0xff,0,0); //字体颜色
+scores_text.font.pos = array(0,0); //得分坐标
+turn_over_text.pos = array(25,150); //游戏结束字符串需要显示在主屏幕中的坐标
+pause_game.font.pos = array(50,150); //游戏暂停字符串需要显示在主屏幕中的坐标
+sdlDrawTextEx(&scores_text.font.img , scores_text.font.fontobj, "scores:"+scores_text.scores , scores_text.font.fontcolor); //生成得分信息字符串的位图表面
+sdlDrawTextEx(&turn_over_text.img , turn_over_text.fontobj, "Up to ReStart Down to Exit!" , turn_over_text.fontcolor,array(0,0,0)); //生成游戏结束的字符串的位图表面
+sdlDrawTextEx(&pause_game.font.img , pause_game.font.fontobj, "game pause press 'P' key to resume!" , pause_game.font.fontcolor,array(0,0,0)); //生成暂停信息的字符串的位图表面
+scores_text.needDraw = TRUE;
+gameMainBg.count = GameMainWidthNum * GameMainHeightNum;
+for(i=0;i<gameMainBg.count;i++) //循环将主游戏区域的方格数组初始化为0
+	gameMainBg.fix_tetris[i].occupy = 0;
+endfor
+gameMainBg.line_count_array[GameMainWidthNum-1] = 0; //将line_count_array记录每行的方块数的数组进行初始化。
+gameMainBg.remove_line_array[TetrisStateNum-1] = 0; //将remove_line_array记录需要消除的行的数组进行初始化。
+gameMainBg.needRemoveNum = 0; //将需要消除的行数初始化为0
+clsTetris tetris; //运动中的俄罗斯方块结构
+clsNextTetris next_tetris; //下一次将要显示的俄罗斯方块结构
+gameMainBg.pos = array(TetrisWidth,TetrisHeight,GameMainWidthNum * TetrisWidth,GameMainHeightNum * TetrisHeight); //初始化游戏主区域的坐标宽高等信息
+gameMainBg.bgcolor = array(0xff,0xff,0xff); //初始化主区域的背景颜色
+clsZenglBgImg zengl_lang_bgimg;
+zengl_lang_bgimg.img = sdlLoadBmp("lang.png"); //zengl program的背景图片
+zengl_lang_bgimg.pos = array(280,210); //zengl program的背景图片在游戏窗口中的坐标
+zengl_lang_bgimg.needDraw = TRUE; //是否需要绘制zengl program背景图片的标志
+tetris.bgimg = sdlLoadBmp("tetris.png"); //俄罗斯方块背景图片
+tetris.members = array(
+					array(0,2),array(1,2),array(2,2),array(3,2)  ,  array(2,0),array(2,1),array(2,2),array(2,3), 
+					array(0,2),array(1,2),array(2,2),array(3,2)  ,  array(2,0),array(2,1),array(2,2),array(2,3), //I形状的虚拟坐标
+
+					array(0,0),array(0,1),array(1,1),array(2,1)  ,  array(0,2),array(1,2),array(1,1),array(1,0), 
+					array(0,1),array(1,1),array(2,1),array(2,2)  ,  array(2,0),array(1,0),array(1,1),array(1,2), //J形状的虚拟坐标
+
+					array(0,1),array(1,1),array(2,1),array(2,0)  ,  array(0,0),array(1,0),array(1,1),array(1,2),
+					array(0,2),array(0,1),array(1,1),array(2,1)  ,  array(1,0),array(1,1),array(1,2),array(2,2), //L形状的虚拟坐标
+
+					array(0,0),array(0,1),array(1,1),array(1,0)  ,  array(0,0),array(0,1),array(1,1),array(1,0),
+					array(0,0),array(0,1),array(1,1),array(1,0)  ,  array(0,0),array(0,1),array(1,1),array(1,0), //O形状的虚拟坐标
+
+					array(0,1),array(1,1),array(1,0),array(2,0)  ,  array(0,0),array(0,1),array(1,1),array(1,2), 
+					array(0,1),array(1,1),array(1,0),array(2,0)  ,  array(0,0),array(0,1),array(1,1),array(1,2), //S形状的虚拟坐标
+
+					array(0,1),array(1,1),array(1,0),array(2,1)  ,  array(0,1),array(1,1),array(1,0),array(1,2), 
+					array(0,1),array(1,1),array(1,2),array(2,1)  ,  array(1,0),array(1,1),array(1,2),array(2,1), //T形状的虚拟坐标
+
+					array(0,0),array(1,0),array(1,1),array(2,1)  ,  array(0,2),array(0,1),array(1,1),array(1,0), 
+					array(0,0),array(1,0),array(1,1),array(2,1)  ,  array(0,2),array(0,1),array(1,1),array(1,0) //Z形状的虚拟坐标
+						);
+tetris.startindex = bltRandom()%TetrisStyleNum; //生成随机的初始形状样式
+tetris.state = bltRandom()%TetrisStateNum; //生成随机的旋转状态
+tetris.speed = 1; //默认下落格数，每次下落一格
+tetris.xy.vx = bltRandom()%(GameMainWidthNum - 3); //设置随机的水平虚拟坐标
+tetris.xy.vy = 0;
+next_tetris.startindex = tetris.startindex;
+myGetRandomIndex(); //随机生成下一次的形状样式
+next_tetris.state = bltRandom()%TetrisStateNum; //生成随机的下一次的旋转状态
+next_tetris.needDraw = TRUE;
+next_tetris.pos = array(280,30); //下一次的俄罗斯方块预览在游戏窗口中的坐标位置
+isneedDraw = TRUE;
+event = array(); //将event初始化，类变量的初始化和数组是一样的
+event[KeyLeft] = 0; //对event数组扩容。array函数对数组初始化默认只有10个元素，而KeyLeft的值为276，所以通过对其赋值来进行初始化和扩容，否则虚拟机会输出错误来禁止访问event[KeyLeft]元素
+gameover = FALSE;
+turn_over = FALSE;
+sdlFillRect(screen,NULL,array(0, 0xFF, 0xFF)); //先绘制游戏窗口的背景色为蓝色和绿色的混搭颜色。
+time = sdlGetTicks(); //获取游戏的滴答数
+FingerUp = WinHeight/4;
+FingerDown = WinHeight - FingerUp;
+FingerLeft = WinWidth/2;
+while(!gameover)
+	while(sdlPollEvent(event)!=NoEvent)
+		switch(event.type)
+		case EvQuit: //点击了窗口右上角的叉叉则game over游戏结束
+			gameover = TRUE;
+			break;
+		case EvResume:
+			sdlAndroidLog('tetris:resume event\n');
+			//screen = sdlGetWindowSurface(); //当系统切换出去后，目前还没找到恢复场景图像的方法，所以Android里一旦切换出去，再切换回来就什么也看不到了!!!
+			break;
+		case EvFingerDown:
+				if(event.finger.y < FingerUp)
+					if(!turn_over)
+						tetris.direct = KeyUp;
+					else
+						myReStartGame();
+					endif
+				elif(event.finger.y > FingerDown)
+					if(!turn_over)
+						tetris.direct = KeyDown;
+					else
+						gameover = TRUE;
+					endif
+				else
+					if(event.finger.x < FingerLeft)
+						tetris.direct = KeyLeft;
+					else
+						tetris.direct = KeyRight;
+					endif
+				endif
+			break;
+		case EvKeyDown:
+			switch(event.keytype)
+			case KeyEsc: //按了ESC键，也game over游戏结束
+				gameover = TRUE;
+				break;
+			case KeyLeft: //如果按了左键，则设置俄罗斯方块的当前运动方位为向左，为了使用方便，直接用按键值来作为方位。将会产生左移效果
+				tetris.direct = KeyLeft;
+				break;
+			case KeyRight: //按右键，将会产生右移效果
+				tetris.direct = KeyRight;
+				break;
+			case KeyUp: //按上键，将会切换俄罗斯方块的旋转状态
+				tetris.direct = KeyUp;
+				break;
+			case KeyDown: //按下键，将会加速下落。
+				tetris.direct = KeyDown;
+				break;
+			case KeyR: //R键重开一轮游戏
+				myReStartGame();
+				break;
+			case KeyP: //P键暂停游戏
+				myGameDoPause();
+				break;
+			//endswt
+			endswitch //既可以用endswt，也可以用endswitch
+			break;
+		endswt
+	endwhile
+	sdlDelay(10); //设置10毫秒延时。防止CPU持续占用资源
+	if(pause_game.needPause) //判断用户是否暂停
+		if(pause_game.needDraw)
+			sdlBlitImg(pause_game.font.img , NULL , screen , pause_game.font.pos); //在游戏窗口中显示暂停字符串信息
+			sdlShowScreen(); //将主屏幕表面输出到显卡显示出来。
+			pause_game.needDraw = FALSE;
+		endif
+		continue; //在暂停状态下，跳过后面的代码
+	endif
+	if(!turn_over) //如果本轮结束，则不再计算俄罗斯方块的运动坐标
+		myTetrisMove();
+	endif
+	if(isneedDraw) //通过isneedDraw可以按需求进行绘制表面，这样可以减少CPU的开销。尤其是在暂停或视图静止时，CPU开销几乎为0，如果没有这个控制的话，即使静止状态都会产生较大的CPU开销。
+		sdlFillRect(screen,gameMainBg.pos,gameMainBg.bgcolor); //绘制主游戏区域背景色。
+		myDrawFixTetris(); //绘制主游戏区域所有固定的方块
+		myDrawTetris(); //绘制运动中的方块
+		if(scores_text.needDraw) //根据需要，在主游戏区域右侧绘制得分字符串信息
+			sdlFillRect(screen,array(0,0,150,50),array(0, 0xFF, 0xFF));
+			sdlBlitImg(scores_text.font.img , NULL , screen , scores_text.font.pos);
+			scores_text.needDraw = FALSE;
+		endif
+		if(zengl_lang_bgimg.needDraw) //根据需要，在主游戏区域右侧绘制zengl program背景图片
+			sdlBlitImg(zengl_lang_bgimg.img , NULL , screen , zengl_lang_bgimg.pos);
+			zengl_lang_bgimg.needDraw = FALSE;
+		endif
+		if(turn_over) //如果一轮结束，则显示游戏结束的字符串信息。
+			sdlBlitImg(turn_over_text.img , NULL , screen , turn_over_text.pos);
+		endif
+		sdlShowScreen(); //将主屏幕表面输出到显卡显示出来。
+		isneedDraw = FALSE; //将isneedDraw设为FALSE，这样只有需要时才会绘制上面的位图表面。
+	endif
+endwhile
+
+//从v1.0.5版本开始的SDL模块无需手动清理SDL资源，系统在结束时会自动清理所有分配过的SDL指针和其他资源。

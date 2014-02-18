@@ -1,0 +1,360 @@
+inc 'sdl_def.zl';
+;;;
+
+/*
+   游戏初始化
+*/
+fun myInit()
+	global screen,pokerlistAndroid,pokerlistUser,winText,turns,turns_num;
+	clsPokerList pokerlistAndroid; clsPokerList pokerlistUser; clsText winText;
+	clsText turns;
+	sdlInit(); //SDL全局初始化
+	screen = sdlCreateWin(WinWidth,WinHeight,32,0); //创建窗口
+	sdlSetCaption('21点 Up发牌 Down不要牌 www.zengl.com'); //设置窗口标题
+	sdlFontInit(); //SDL字体全局初始化
+	pokerlistAndroid.name = 'Com';
+	pokerlistUser.name = 'User';
+	pokerlistUser.money = pokerlistAndroid.money = 3000;
+	pokerlistUser.font.obj = pokerlistAndroid.font.obj = sdlOpenFont('CANDARA.TTF',25);
+	pokerlistUser.font.fontcolor = pokerlistAndroid.font.fontcolor = array(0xff,0,0);
+	pokerlistUser.font.bgcolor = pokerlistAndroid.font.bgcolor = array(0,0,0);
+	pokerlistUser.text = array(); //初始化pokerlistUser.text，这样下面的引用才会生效。  
+	sdlDrawTextEx(&pokerlistUser.text.img,pokerlistUser.font.obj,pokerlistUser.name + ' Total: ' +
+							pokerlistUser.totalpoint + '  Money: ' + pokerlistUser.money,
+							pokerlistUser.font.fontcolor,
+							pokerlistUser.font.bgcolor);
+	pokerlistUser.text.dest = array(0,WinHeight - 30);
+	pokerlistAndroid.text = array(); //pokerlistAndroid.text，这样下面的引用才会生效。
+	sdlDrawTextEx(&pokerlistAndroid.text.img,pokerlistAndroid.font.obj,
+							pokerlistAndroid.name + ' Total: ' +
+							pokerlistAndroid.totalpoint + '  Money: ' + pokerlistAndroid.money,
+							pokerlistAndroid.font.fontcolor);
+							//pokerlistAndroid.font.bgcolor);			
+	pokerlistAndroid.text.dest = array(0,0);
+	pokerlistAndroid.isinmove = pokerlistUser.isinmove = FALSE;
+	turns_num = 1;
+	turns = array(); //将turns初始化
+	myDrawTextEx(pokerlistUser,&turns.img,'the '+turns_num+' turn',TRUE); //设置显示第几轮的字符串的位图表面
+	turns.dest.x = 10; //设置第几轮的位图表面在主屏幕中的坐标
+	turns.dest.y = WinHeight - 55;
+	winText = array(); //将winText初始化
+endfun
+
+/*
+   加载图片资源
+*/
+fun myLoadFiles()
+	global pokerlistAndroid,pokerlistUser;//bkimg;
+	clsPokerList pokerlistAndroid; clsPokerList pokerlistUser;
+	pokerlistUser.pokerbg = pokerlistAndroid.pokerbg = sdlLoadBmp("pokerbg.png",0,0,0); //扑克牌的背景图片,colorkey为黑色
+	pokerlistUser.pokernum = pokerlistAndroid.pokernum = sdlLoadBmp("pokernumber.png",0xff,0xff,0xff); //加载扑克数字集合的图片，colorkey为白色
+	pokerlistUser.pokerflower = pokerlistAndroid.pokerflower = sdlLoadBmp("pokerflower.png",0xff,0xff,0xff); //加载花色集合的图片，colorkey为白色
+endfun
+
+/*
+   给电脑和用户发牌
+*/
+fun myGetPoker(pokerlist)
+	global pokerlistUser,winText;
+	clsPokerList pokerlistUser; clsText winText;
+	clsPokerList pokerlist; 
+	pokerlist.pokers[pokerlist.count].num = bltRandom()%13; //设置随机的扑克数 1到13
+	pokerlist.pokers[pokerlist.count].flower = bltRandom()%3; //设置随机的花号索引，有桃，梅花，方块
+	pokerlist.pokers[pokerlist.count].color = bltRandom()%2; //设置随机的花色，有黑色和红色
+	pokerlist.pokers[pokerlist.count].pos.x = bltConvToInt(
+						PokerStartX + pokerlist.count * (PokerWidth/2) + 30
+						);
+	//pokerlist.pokers[pokerlist.count].pos.x = -50; //设置所发扑克起始位置，因为扑克在发牌时，有个从左到右的滑动效果。
+	if(pokerlist.name == 'Com')
+		pokerlist.pokers[pokerlist.count].pos.y = PokerStartY; //设置扑克起始y坐标，电脑的牌在上面，用户的牌在下面
+	else
+		pokerlist.pokers[pokerlist.count].pos.y = PokerStartY + PokerHeight + 30;
+	endif
+	pokerlist.count++; //增加电脑或用户的扑克总数
+	pokerlist.totalpoint += pokerlist.pokers[pokerlist.count-1].num + 1; //设置扑克的总点数
+	//pokerlist.isinmove = TRUE; //设置扑克处于从左到右的滑动状态，移动状态下，不能进行发牌之类的操作。
+	//sdlFreeImage(pokerlist.text.img);
+	if(pokerlist.name == 'Com') //设置电脑和用户的扑克总点数和资金信息的字符串对应的位图表面。
+		sdlDrawTextEx(&pokerlist.text.img,pokerlist.font.obj,pokerlist.name + ' Total: ' +
+										pokerlist.totalpoint + '  Money: ' + pokerlist.money,
+										pokerlist.font.fontcolor); //电脑的字符串信息没有背景色
+	else
+		sdlDrawTextEx(&pokerlist.text.img,pokerlist.font.obj,pokerlistUser.name + ' Total: ' +
+						pokerlistUser.totalpoint + '  Money: ' + pokerlistUser.money,
+						pokerlist.font.fontcolor,
+						pokerlist.font.bgcolor); //用户的字符串信息有背景色。
+	endif
+endfun
+
+/*
+   将用户的扑克或电脑的扑克循环绘制到主屏幕表面。
+*/
+fun myShowPokers(pokerlist)
+	global screen;
+	clsPokerList pokerlist; clsPosition clip; clsPosition dest;
+	//sdlFillRect(screen,NULL,array(0, 0xFF, 0xFF));
+	for(i=0;i<pokerlist.count;i++)
+		/*need_x = bltConvToInt(PokerStartX + i * (PokerWidth/2) + 30); //先得到要绘制的扑克的最终位置。
+		if(pokerlist.pokers[i].pos.x < need_x) //如果还在滑动状态，就将x坐标加50
+			pokerlist.pokers[i].pos.x += 50;
+			if(pokerlist.pokers[i].pos.x >= need_x) //当扑克滑动到最终位置时，停止滑动
+				pokerlist.pokers[i].pos.x = need_x;
+				pokerlist.isinmove = FALSE; //设置滑动状态为FALSE，表示滑动结束。
+			endif
+		endif*/
+		sdlBlitImg(pokerlist.pokerbg,NULL,screen,pokerlist.pokers[i].pos); //先绘制扑克的背景图
+		clip.y = 0;
+		clip.w = clip.h = 30;
+		if(pokerlist.pokers[i].color)
+			clip.x = pokerlist.pokers[i].num * 30 + 390; //根据花色设置要绘制的扑克数在扑克数集合图片中的截图坐标。红色的数字在后面所以加390像素
+		else
+			clip.x = pokerlist.pokers[i].num * 30;
+		endif
+		dest.x = pokerlist.pokers[i].pos.x + 10;
+		dest.y = pokerlist.pokers[i].pos.y + 10;
+		sdlBlitImg(pokerlist.pokernum,clip,screen,dest); //绘制扑克数字，本游戏的扑克是从1到K
+		clip.y = 0;
+		clip.w = clip.h = 50;
+		if(pokerlist.pokers[i].color)
+			clip.x = pokerlist.pokers[i].flower * 50 + 150; //根据花色确定要绘制的花样式在花色集合图片中的截图坐标。有黑桃，红桃，黑梅花，红梅花等，红色的在后面，所以加150像素
+		else
+			clip.x = pokerlist.pokers[i].flower * 50;
+		endif
+		dest.x += 10;
+		dest.y += 30;
+		sdlBlitImg(pokerlist.pokerflower,clip,screen,dest); //最后绘制扑克的花样式
+	endfor
+	//sdlBlitImg(pokerlist.text.img,NULL,screen,pokerlist.text.dest); //绘制完用户或电脑的所有扑克后，将用户或电脑的总点数和资金信息绘制出来。
+endfun
+
+/*
+   电脑用于判断是否需要继续要牌的函数
+*/
+fun myIsNeedPoker(obj)
+	clsPokerList obj;
+	num = 21 - obj.totalpoint;
+	if(bltRandom()%13 +1 <= num)
+		return 1;
+	else
+		return 0;
+	endif
+endfun
+
+/*
+   对用户按下的方向键的上键和下键的处理。
+*/
+fun myPressUpDown(keypress)
+	global pokerlistUser,pokerlistAndroid,winflag;
+	clsPokerList pokerlistUser; clsPokerList pokerlistAndroid;
+	if(winflag != WIN_NONE && !pokerlistUser.isinmove && !pokerlistAndroid.isinmove) //如果一轮结束，或者扑克正在滑动状态中，则忽略上下按键。
+		return;
+	endif
+	if(keypress == KeyUp) //按了上键，则给用户发牌。
+		myGetPoker(pokerlistUser);
+	endif
+	if(pokerlistUser.totalpoint > 21) //如果用户的总点数超过21点，则电脑赢
+		return winflag = WIN_ANDROID;
+	endif
+	if(pokerlistAndroid.totalpoint < pokerlistUser.totalpoint || 
+			myIsNeedPoker(pokerlistAndroid)) //如果电脑的总点数小于用户的总点数，或电脑判断需要要牌，则给电脑发牌。
+		myGetPoker(pokerlistAndroid);
+	endif
+	if(pokerlistAndroid.totalpoint > 21) //如果电脑的总点数超过21点，则用户赢
+		return winflag = WIN_USER;
+	endif
+	if(keypress == KeyDown) //如果按了下键，则说明用户不需要继续要牌，则判断本轮的输赢
+		if(pokerlistUser.totalpoint > pokerlistAndroid.totalpoint) //如果用户总点数大于电脑的则用户赢，前面已经判断过是否超过21点了，所以这里就不用再判断了。
+			return winflag = WIN_USER;
+		else //反之，电脑赢，所以用户必须大于电脑，才能赢，小于或等于都是输。
+			return winflag = WIN_ANDROID;
+		endif
+	endif
+endfun
+
+fun myDrawPointMoneyText()
+	global pokerlistUser,pokerlistAndroid,screen;
+	clsPokerList pokerlistUser; clsPokerList pokerlistAndroid;
+	sdlBlitImg(pokerlistUser.text.img,NULL,screen,pokerlistUser.text.dest); 
+	sdlBlitImg(pokerlistAndroid.text.img,NULL,screen,pokerlistAndroid.text.dest); 
+endfun
+
+/*
+   生成字符串的位图表面
+*/
+fun myDrawText(pokerlist,str,needbg)
+	clsPokerList pokerlist;
+	if(needbg == FALSE) //判断是否需要背景色
+		return sdlDrawText(pokerlist.font.obj,str,
+							pokerlist.font.fontcolor);
+	else
+		return sdlDrawText(pokerlist.font.obj,str,
+							pokerlist.font.fontcolor,
+							pokerlist.font.bgcolor);
+	endif
+endfun
+
+/*
+   生成字符串的位图表面，并释放掉原表面指针
+*/
+fun myDrawTextEx(pokerlist,textimg,str,needbg)
+	clsPokerList pokerlist;
+	if(needbg == FALSE) //判断是否需要背景色
+		return sdlDrawTextEx(&textimg,pokerlist.font.obj,str,
+							pokerlist.font.fontcolor);
+	else
+		return sdlDrawTextEx(&textimg,pokerlist.font.obj,str,
+							pokerlist.font.fontcolor,
+							pokerlist.font.bgcolor);
+	endif
+endfun
+
+/*
+  如果一轮结束，则根据winflag输赢标记设置输赢的字符串的位图表面
+*/
+fun myGameTurnDown()
+	global pokerlistUser,pokerlistAndroid,winflag,gameflag,winText,screen,isneedDraw;
+	clsPokerList pokerlistUser; clsPokerList pokerlistAndroid; clsText winText;
+	if(!pokerlistAndroid.isinmove && !pokerlistUser.isinmove)
+		if(gameflag == GAME_START)
+			winText.dest.x = 50;
+			winText.dest.y = 110;
+			/*if(winText.img != NULL)
+				sdlFreeImage(winText.img);
+			endif*/
+			if(winflag == WIN_USER) //用户赢了，则显示用户赢了的字符串位图
+				myDrawTextEx(pokerlistUser,&winText.img,pokerlistUser.name + ' Win! you get 100',TRUE);
+				pokerlistUser.money += 100;
+				pokerlistAndroid.money -= 100;
+			else
+				myDrawTextEx(pokerlistUser,&winText.img,pokerlistAndroid.name + ' Win! you lost 100',TRUE);
+				pokerlistUser.money -= 100;
+				pokerlistAndroid.money += 100;
+			endif
+			//sdlFreeImage(pokerlistUser.text.img);
+			myDrawTextEx(pokerlistUser,&pokerlistUser.text.img,pokerlistUser.name + ' Total: ' +
+										pokerlistUser.totalpoint + '  Money: ' + pokerlistUser.money,
+										TRUE);
+			//sdlFreeImage(pokerlistAndroid.text.img);
+			myDrawTextEx(pokerlistAndroid,&pokerlistAndroid.text.img,pokerlistAndroid.name + ' Total: ' +
+										pokerlistAndroid.totalpoint + '  Money: ' + pokerlistAndroid.money);
+			gameflag = GAME_DOWN;
+		endif
+		sdlBlitImg(winText.img,NULL,screen,winText.dest); //将输赢字符串位图绘制到主屏幕表面。
+
+		myDrawTextEx(pokerlistUser,&winText.img,'Up to ReStart',TRUE);
+		winText.dest.y += 30;
+		sdlBlitImg(winText.img,NULL,screen,winText.dest); //将输赢字符串位图绘制到主屏幕表面。
+
+		myDrawTextEx(pokerlistUser,&winText.img,'Down To Exit',TRUE);
+		winText.dest.y += 30;
+		sdlBlitImg(winText.img,NULL,screen,winText.dest); //将输赢字符串位图绘制到主屏幕表面。
+		isneedDraw = TRUE;
+	endif
+endfun
+
+/*
+   如果按了右键，则重新开始一轮
+*/
+fun myGameRestart()
+	global pokerlistUser,pokerlistAndroid,winflag,gameflag,turns,turns_num,isneedDraw;
+	clsPokerList pokerlistUser; clsPokerList pokerlistAndroid; clsText turns;
+	if(gameflag == GAME_START) //如果游戏已经开始，则返回
+		return;
+	endif
+	pokerlistUser.count = pokerlistAndroid.count = 0; //将用户和电脑的扑克数，总点数重置为0
+	pokerlistUser.totalpoint = pokerlistAndroid.totalpoint = 0;
+	//sdlFreeImage(pokerlistUser.text.img);
+	myDrawTextEx(pokerlistUser,&pokerlistUser.text.img,pokerlistUser.name + ' Total: ' +
+								pokerlistUser.totalpoint + '  Money: ' + pokerlistUser.money,
+								TRUE); //重新设置总点数字符串的位图表面。
+	//sdlFreeImage(pokerlistAndroid.text.img);
+	myDrawTextEx(pokerlistAndroid,&pokerlistAndroid.text.img,pokerlistAndroid.name + ' Total: ' +
+								pokerlistAndroid.totalpoint + '  Money: ' + pokerlistAndroid.money);
+	//sdlFreeImage(turns.img);
+	myDrawTextEx(pokerlistUser,&turns.img,'the '+ ++turns_num+' turn',TRUE); //设置新的轮数的字符串的位图表面
+	winflag = WIN_NONE; //重置输赢标记
+	gameflag = GAME_START; //设置游戏已经开始
+	isneedDraw = TRUE;
+endfun
+
+clsPokerList pokerlistAndroid;
+clsPokerList pokerlistUser;
+clsText winText;
+winflag = WIN_NONE;
+gameflag = GAME_START;
+clsText turns;
+turns_num;
+
+//sdlFontInit();
+//pokerlistUser.font.obj = pokerlistAndroid.font.obj = sdlOpenFont('songti.ttf',25);
+
+myInit();
+myLoadFiles();
+
+clsEvent event;
+event = array(); //将event初始化，类变量的初始化和数组是一样的
+gameover = FALSE;
+isneedDraw = TRUE;
+FingerUp = WinHeight/2;
+while(!gameover)
+	while(sdlPollEvent(event)!=NoEvent)
+		switch(event.type)
+		case EvQuit: //点击了窗口右上角的叉叉则game over游戏结束
+			gameover = TRUE;
+			break;
+		case EvResume:
+			sdlAndroidLog('21:resume event\n');
+			//screen = sdlGetWindowSurface(); //当系统切换出去后，目前还没找到恢复场景图像的方法，所以Android里一旦切换出去，再切换回来就什么也看不到了!!!
+			break;
+		case EvFingerDown:
+				if(event.finger.y < FingerUp)
+					if(gameflag == GAME_START)
+						myPressUpDown(KeyUp);
+						isneedDraw = TRUE;
+					else
+						myGameRestart();
+					endif
+				else
+					if(gameflag == GAME_START)
+						myPressUpDown(KeyDown);
+						isneedDraw = TRUE;
+					else
+						gameover = TRUE;
+					endif
+				endif
+			break;
+		case EvKeyDown:
+			switch(event.keytype)
+			case KeyEsc: //按了ESC键，也game over游戏结束
+				gameover = TRUE;
+				break;
+			case KeyUp: //按上键，用户要牌
+				myPressUpDown(KeyUp);
+				isneedDraw = TRUE;
+				break;
+			case KeyDown: //按下键，用户不要牌
+				myPressUpDown(KeyDown);
+				isneedDraw = TRUE;
+				break;
+			case KeyRight: //按右键，重新开始一轮
+				myGameRestart();
+				break;
+			endswt
+			break;
+		endswt
+	endwhile
+	sdlDelay(10); //设置10毫秒延时。防止CPU持续占用资源 
+	//sdlSetBkImg(bkimg);
+	if(isneedDraw || pokerlistAndroid.isinmove || pokerlistUser.isinmove) //通过isneedDraw按需求绘制，可以极大的减少CPU的开销。
+		sdlFillRect(screen,NULL,array(0, 0xFF, 0xFF)); //先绘制游戏窗口的背景色为蓝色和绿色的混搭颜色。
+		myShowPokers(pokerlistAndroid); //绘制电脑的扑克牌和电脑的总点数和资金数
+		myShowPokers(pokerlistUser); //绘制用户的扑克牌和用户的总点数和资金数
+		if(winflag != WIN_NONE) //判断是否决出本轮的胜负
+			myGameTurnDown(); //如果决出来了，则绘制用户或电脑赢了的字符串信息
+		endif
+		myDrawPointMoneyText();
+		sdlBlitImg(turns.img,NULL,screen,turns.dest); //绘制第几轮的字符串信息
+		sdlShowScreen(); //将主屏幕表面输出到显卡显示出来。
+		isneedDraw = FALSE;
+	endif
+endwhile

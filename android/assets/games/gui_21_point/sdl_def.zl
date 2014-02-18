@@ -1,0 +1,103 @@
+use builtin,sdl;
+sdlAndroidLog("before Init");
+
+def TRUE 1;
+def FALSE 0;
+def NULL 0;
+//sdl event def
+def NoEvent 0;
+def EvKeyDown 2;
+def EvKeyUp 3;
+def EvFingerDown 0x700;
+def EvResume 0x8001;
+def KeyEsc 27;
+def KeyUp 273;
+def KeyDown 274;
+def KeyLeft 276;
+def KeyRight 275;
+def SDL_MOUSEMOTION 4;
+def SDL_MOUSEBUTTONDOWN 5;
+def SDL_MOUSEBUTTONUP 6;
+def EvQuit 12;
+//sdl event def end
+
+def WinWidth 320;
+def WinHeight 430;
+def PokerWidth 100;
+def PokerHeight 150;
+def PokerStartX 10;
+def PokerStartY 35;
+def WIN_NONE 0;
+def WIN_USER 1;
+def WIN_ANDROID 2;
+def GAME_START 1;
+def GAME_DOWN 2;
+
+class clsPosition
+	x;
+	y;
+	w;
+	h;
+endcls
+
+class clsMouseMotionEvt
+	type;	/**< SDL_MOUSEMOTION */
+	which;	/**< The mouse device index */
+	state;	/**< The current button state */
+	x; y;	/**< The X/Y coordinates of the mouse */
+	xrel;	/**< The relative motion in the X direction */
+	yrel;	/**< The relative motion in the Y direction */
+endcls
+
+class clsMouseButtonEvt
+	type;	/**< SDL_MOUSEBUTTONDOWN or SDL_MOUSEBUTTONUP */
+	which;	/**< The mouse device index */
+	state;	/**< SDL_PRESSED or SDL_RELEASED */
+	x; y;	/**< The X/Y coordinates of the mouse at press time */
+	button;	/**< The mouse button index */
+endcls
+
+class clsFingerDownEvt
+	type;
+	x; y;
+endclass
+
+class clsEvent
+	type;
+	keytype;
+	clsMouseMotionEvt motion;
+	clsMouseButtonEvt button;
+	clsFingerDownEvt finger; //手指点击事件
+endcls
+
+class clsPoker
+	num;
+	flower;
+	color;
+	clsPosition pos;
+endcls
+
+class clsFont
+	obj;
+	fontcolor;
+	bgcolor;
+endcls
+
+class clsText
+	img;
+	clsPosition dest;
+endcls //endclass
+
+class clsPokerList
+	name;
+	money;
+	pokerbg;
+	pokernum;
+	pokerflower;
+	clsFont font;
+	clsPoker pokers;
+	count;
+	totalpoint;
+	clsText text;
+	isinmove;
+endcls
