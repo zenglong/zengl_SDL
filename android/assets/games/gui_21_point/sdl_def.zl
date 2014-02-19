@@ -25,7 +25,7 @@ def WinWidth 320;
 def WinHeight 430;
 def PokerWidth 100;
 def PokerHeight 150;
-def PokerStartX 10;
+def PokerStartX 5;
 def PokerStartY 35;
 def WIN_NONE 0;
 def WIN_USER 1;

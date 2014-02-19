@@ -1,5 +1,4 @@
 inc 'sdl_def.zl';
-;;;
 
 /*
    游戏初始化
@@ -62,7 +61,7 @@ fun myGetPoker(pokerlist)
 	pokerlist.pokers[pokerlist.count].flower = bltRandom()%3; //设置随机的花号索引，有桃，梅花，方块
 	pokerlist.pokers[pokerlist.count].color = bltRandom()%2; //设置随机的花色，有黑色和红色
 	pokerlist.pokers[pokerlist.count].pos.x = bltConvToInt(
-						PokerStartX + pokerlist.count * (PokerWidth/2) + 30
+						PokerStartX + pokerlist.count * (PokerWidth/2) + 10
 						);
 	//pokerlist.pokers[pokerlist.count].pos.x = -50; //设置所发扑克起始位置，因为扑克在发牌时，有个从左到右的滑动效果。
 	if(pokerlist.name == 'Com')
